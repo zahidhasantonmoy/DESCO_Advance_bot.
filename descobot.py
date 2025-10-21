@@ -16,11 +16,13 @@ import os
 import asyncio
 
 # ---------------- Configuration ----------------
-BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Your bot token (revoke after testing)
+BOT_TOKEN = os.getenv("8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable not set")
 DAILY_TIME = dt_time(hour=9, minute=0, tzinfo=ZoneInfo("Asia/Dhaka"))
 INFO_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getCustomerInfo"
 BALANCE_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getBalance"
-DB_FILE = os.path.join(os.path.dirname(__file__), "desco_bot_users.db")  # Robust DB path
+DB_FILE = os.path.join(os.path.expanduser("~"), "desco_bot_users.db")  # Android-friendly path
 
 # Disable insecure HTTPS warnings (not recommended for production)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -102,10 +104,6 @@ def set_threshold(chat_id: int, threshold: float):
 
 # ---------------- DESCO API helpers ----------------
 def fetch_balance(account_no: str, meter_no: str):
-    """
-    Returns dict like {'balance': ..., 'currentMonthConsumption': ..., 'readingTime': ...}
-    or None on error.
-    """
     try:
         params = {"accountNo": account_no, "meterNo": meter_no}
         resp = requests.get(BALANCE_URL, params=params, timeout=10, verify=False)
@@ -113,8 +111,7 @@ def fetch_balance(account_no: str, meter_no: str):
         j = resp.json()
         if j.get("code") == 200 and "data" in j:
             return j["data"]
-        else:
-            return None
+        return None
     except Exception as e:
         logger.error("Error fetching balance: %s", e)
         return None
@@ -127,17 +124,13 @@ def fetch_customer_info(account_no: str, meter_no: str):
         j = resp.json()
         if j.get("code") == 200 and "data" in j:
             return j["data"]
-        else:
-            return None
+        return None
     except Exception as e:
         logger.error("Error fetching customer info: %s", e)
         return None
 
 # ---------------- Telegram command handlers ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    /start command: begin registration flow
-    """
     chat_id = update.effective_chat.id
     logger.info("User %s started registration", chat_id)
     user = get_user(chat_id)
@@ -156,9 +149,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handle plain text messages for registration flow and other free-text interactions.
-    """
     chat_id = update.effective_chat.id
     text = update.message.text.strip()
     logger.info("User %s sent text: %s", chat_id, text)
@@ -176,7 +166,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if info is None:
             await update.message.reply_text(
                 "⚠️ ঠিকঠাক Account/Meter মিললো না অথবা API তে সমস্যা। আবার চেষ্টা করুন।\n"
-                "আপনি Ctrl+C করে নতুন করে /start দিতে পারেন।"
+                "আপনি /start দিয়ে নতুন করে শুরু করতে পারেন।"
             )
             context.user_data.pop("expect", None)
             context.user_data.pop("account_no", None)
@@ -199,9 +189,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    /status - current balance for this user
-    """
     chat_id = update.effective_chat.id
     logger.info("User %s requested status", chat_id)
     user = get_user(chat_id)
@@ -229,9 +216,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 async def cmd_setthreshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    /setthreshold <amount> - set alert threshold
-    """
     chat_id = update.effective_chat.id
     logger.info("User %s requested setthreshold: %s", chat_id, context.args)
     args = context.args
@@ -242,13 +226,10 @@ async def cmd_setthreshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         val = float(args[0])
         set_threshold(chat_id, val)
         await update.message.reply_text(f"✅ থ্রেশহোল্ড সেট করা হয়েছে: ৳{val}")
-    except Exception as e:
+    except Exception:
         await update.message.reply_text("ভুল পরিমাপ। অনুগ্রহ করে একটি সংখ্যা লিখুন।")
 
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    /stop - unregister user
-    """
     chat_id = update.effective_chat.id
     logger.info("User %s requested stop", chat_id)
     user = get_user(chat_id)
@@ -273,13 +254,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- Daily job ----------------
 async def daily_job(context: ContextTypes.DEFAULT_TYPE):
-    """
-    This function will be scheduled to run daily by job_queue.
-    It iterates all users, fetches balance, updates DB and sends message.
-    """
     logger.info("Running daily job to check balances...")
     users = get_all_users()
-    for chat_id, account_no, meter_no, threshold, last_balance in users:
+    for chat_id, account_no, meter_no, threshold, _ in users:
         try:
             bal = fetch_balance(account_no, meter_no)
             if not bal:
@@ -294,7 +271,7 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
                 f"🕒 রিডিং সময়: {reading_time}\n"
             )
             if balance <= threshold:
-                msg += "\n⚠️ সতর্কতা: ব্যালেন্স আপনার থ্রেশহোল্ড (৳{:.2f}) এর নিচে আছে। দ্রুত রিচার্জ করুন!".format(threshold)
+                msg += f"\n⚠️ সতর্কতা: ব্যালেন্স আপনার থ্রেশহোল্ড (৳{threshold:.2f}) এর নিচে আছে। দ্রুত রিচার্জ করুন!"
             await context.bot.send_message(chat_id=chat_id, text=msg)
             update_last_balance(chat_id, balance)
         except Exception as e:
@@ -325,15 +302,18 @@ async def main():
             logger.error("Error during shutdown: %s", e)
 
 if __name__ == "__main__":
-    # Get or create an event loop
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        logger.warning("Event loop is already running. Running main in existing loop.")
-        loop.create_task(main())
-        loop.run_forever()
-    else:
-        try:
-            loop.run_until_complete(main())
-        finally:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            logger.warning("Event loop is already running. Scheduling main task.")
+            loop.create_task(main())
+        else:
+            try:
+                loop.run_until_complete(main())
+            finally:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+                if not loop.is_closed():
+                    loop.close()
+    except Exception as e:
+        logger.error("Unexpected error: %s", e)
+        raise
