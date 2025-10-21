@@ -7,7 +7,7 @@ from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
     ContextTypes,
@@ -18,11 +18,11 @@ import asyncio
 
 # ---------------- Configuration ----------------
 BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Replace with your new token from BotFather
-DATABASE_URL = os.getenv("postgresql://descobot_user:EzRm8aOJbwww80UvLAVF03URsgDczzTu@dpg-d3riedpr0fns73dm3c60-a/descobot")   # For PostgreSQL on Render
+DATABASE_URL = os.getenv("postgresql://descobot_user:EzRm8aOJbwww80UvLAVF03URsgDczzTu@dpg-d3riedpr0fns73dm3c60-a/descobot")  # For PostgreSQL on Railway
 USE_SQLITE = not DATABASE_URL  # Fallback to SQLite if DATABASE_URL not set
 if USE_SQLITE:
     DB_FILE = os.path.join(os.path.expanduser("~"), "desco_bot_users.db")
-DAILY_TIME = dt_time(hour=20, minute=30, tzinfo=ZoneInfo("Asia/Dhaka"))  # 8:30 PM for testing
+DAILY_TIME = dt_time(hour=21, minute=30, tzinfo=ZoneInfo("Asia/Dhaka"))  # 9:30 PM for testing
 INFO_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getCustomerInfo"
 BALANCE_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getBalance"
 
@@ -334,7 +334,7 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
 # ---------------- Main ----------------
 async def main():
     init_db()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("setthreshold", cmd_setthreshold))
