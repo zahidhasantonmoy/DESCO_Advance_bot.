@@ -1,8 +1,6 @@
+import asyncio
 import logging
-import psycopg
-import sqlite3
-import requests
-import urllib3
+import os
 from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 from telegram import Update
@@ -10,11 +8,19 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    ContextTypes,
     filters,
+    JobQueue,
 )
-import os
-import asyncio
+import requests
+import sqlite3  # or psycopg2 for PostgreSQL
+# ... (other imports as in your original code)
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 # ---------------- Configuration ----------------
 BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Replace with your new token from BotFather
@@ -333,17 +339,26 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- Main ----------------
 async def main():
-    init_db()
+    """Start the bot."""
+    init_db()  # Initialize database (SQLite/PostgreSQL)
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("setthreshold", cmd_setthreshold))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # Schedule daily job
     app.job_queue.run_daily(daily_job, time=DAILY_TIME)
+
     logger.info("Bot started. Polling...")
+    # Run polling without manual loop management
     await app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
+    # Use asyncio.run to manage the event loop
     asyncio.run(main())
+Key Changes:
