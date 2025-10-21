@@ -27,13 +27,13 @@ logger = logging.getLogger(__name__)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ---------------- Configuration ----------------
-BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Hardcoded token
+BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Hardcoded for testing; use env var for production
 DAILY_TIME = dt_time(hour=21, minute=30, tzinfo=ZoneInfo("Asia/Dhaka"))
-DB_FILE = "/home/monekostomathanosto/desco_bot_users.db"  # Persistent path for PythonAnywhere
+DB_FILE = "desco_bot_users.db"  # Local SQLite database file
 INFO_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getCustomerInfo"
 BALANCE_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getBalance"
 
-# ---------------- Database helpers ----------------
+# ---------------- SQLite Database helpers ----------------
 def init_db():
     try:
         with sqlite3.connect(DB_FILE) as conn:
@@ -62,9 +62,9 @@ def add_or_update_user(chat_id: int, account_no: str, meter_no: str, threshold: 
             """
             INSERT INTO users (chat_id, account_no, meter_no, threshold)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(chat_id) DO UPDATE SET
-            account_no=excluded.account_no,
-            meter_no=excluded.meter_no,
+            ON CONFLICT(chat_id) DO UPDATE SET 
+            account_no=excluded.account_no, 
+            meter_no=excluded.meter_no, 
             threshold=excluded.threshold
             """,
             (chat_id, account_no, meter_no, threshold),
@@ -77,6 +77,7 @@ def remove_user(chat_id: int):
         cur = conn.cursor()
         cur.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
         conn.commit()
+    logger.info("Removed user %s", chat_id)
 
 def get_all_users():
     with sqlite3.connect(DB_FILE) as conn:
@@ -95,6 +96,7 @@ def update_last_balance(chat_id: int, balance: float):
         cur = conn.cursor()
         cur.execute("UPDATE users SET last_balance = ? WHERE chat_id = ?", (balance, chat_id))
         conn.commit()
+    logger.info("Updated last_balance for user %s to %s", chat_id, balance)
 
 def set_threshold(chat_id: int, threshold: float):
     with sqlite3.connect(DB_FILE) as conn:
@@ -154,7 +156,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     logger.info("User %s sent text: %s", chat_id, text)
     expect = context.user_data.get("expect")
-
+    
     if expect == "account":
         if not text.isalnum() or len(text) < 5:
             await update.message.reply_text("⚠️ Invalid Account Number. Please provide a valid account number.")
@@ -190,11 +192,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Commands: /status, /setthreshold, /stop, /help"
         )
         return
-
+    
     if text.lower() in ("status", "স্ট্যাটাস"):
         await cmd_status(update, context)
         return
-
+    
     await update.message.reply_text(
         "I didn't understand. Type /help for assistance.\n"
         "To register, use /start."
@@ -310,19 +312,12 @@ async def main():
     await app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    # Fix for PythonAnywhere - use nest_asyncio
+    # Fix for potential event loop issues
     try:
         import nest_asyncio
         nest_asyncio.apply()
     except ImportError:
-        logger.warning("nest_asyncio not installed; may cause event loop issues")
-
-    # Run with existing event loop
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(main())
-        else:
-            loop.run_until_complete(main())
-    except RuntimeError:
-        asyncio.run(main())
+        logger.warning("nest_asyncio not installed; install if needed for nested loops")
+    
+    # Run on PC
+    asyncio.run(main())
