@@ -18,7 +18,7 @@ import asyncio
 
 # ---------------- Configuration ----------------
 BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Replace with your new token from BotFather
-DATABASE_URL = os.getenv("postgresql://descobot_user:EzRm8aOJbwww80UvLAVF03URsgDczzTu@dpg-d3riedpr0fns73dm3c60-a/descobot")  # For PostgreSQL on Railway
+DATABASE_URL = os.getenv("postgresql://postgres:yOJhoVdkGMQIVELPoFCpqrAHqmgwxUym@postgres.railway.internal:5432/railway")  # For PostgreSQL on Railway
 USE_SQLITE = not DATABASE_URL  # Fallback to SQLite if DATABASE_URL not set
 if USE_SQLITE:
     DB_FILE = os.path.join(os.path.expanduser("~"), "desco_bot_users.db")
