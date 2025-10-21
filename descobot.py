@@ -1,5 +1,5 @@
 import logging
-import psycopg2
+import psycopg
 import sqlite3
 import requests
 import urllib3
@@ -18,11 +18,11 @@ import asyncio
 
 # ---------------- Configuration ----------------
 BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Replace with your new token from BotFather
-DATABASE_URL = os.getenv("postgresql://descobot_user:EzRm8aOJbwww80UvLAVF03URsgDczzTu@dpg-d3riedpr0fns73dm3c60-a/descobot")  # For PostgreSQL on Render
+DATABASE_URL = os.getenv("postgresql://descobot_user:EzRm8aOJbwww80UvLAVF03URsgDczzTu@dpg-d3riedpr0fns73dm3c60-a/descobot")   # For PostgreSQL on Render
 USE_SQLITE = not DATABASE_URL  # Fallback to SQLite if DATABASE_URL not set
 if USE_SQLITE:
     DB_FILE = os.path.join(os.path.expanduser("~"), "desco_bot_users.db")
-DAILY_TIME = dt_time(hour=20, minute=0, tzinfo=ZoneInfo("Asia/Dhaka"))  # Set to 8 PM for testing
+DAILY_TIME = dt_time(hour=20, minute=30, tzinfo=ZoneInfo("Asia/Dhaka"))  # 8:30 PM for testing
 INFO_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getCustomerInfo"
 BALANCE_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getBalance"
 
@@ -52,21 +52,20 @@ def init_db():
             """
         )
     else:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                chat_id BIGINT PRIMARY KEY,
-                account_no TEXT,
-                meter_no TEXT,
-                threshold FLOAT DEFAULT 100.0,
-                last_balance FLOAT
-            )
-            """
-        )
-    conn.commit()
-    conn.close()
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        chat_id BIGINT PRIMARY KEY,
+                        account_no TEXT,
+                        meter_no TEXT,
+                        threshold FLOAT DEFAULT 100.0,
+                        last_balance FLOAT
+                    )
+                    """
+                )
+            conn.commit()
 
 def add_or_update_user(chat_id: int, account_no: str, meter_no: str, threshold: float = 100.0):
     if USE_SQLITE:
@@ -81,19 +80,18 @@ def add_or_update_user(chat_id: int, account_no: str, meter_no: str, threshold: 
             (chat_id, account_no, meter_no, threshold),
         )
     else:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO users (chat_id, account_no, meter_no, threshold)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (chat_id) DO UPDATE
-            SET account_no = EXCLUDED.account_no, meter_no = EXCLUDED.meter_no, threshold = EXCLUDED.threshold
-            """,
-            (chat_id, account_no, meter_no, threshold),
-        )
-    conn.commit()
-    conn.close()
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (chat_id, account_no, meter_no, threshold)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE
+                    SET account_no = EXCLUDED.account_no, meter_no = EXCLUDED.meter_no, threshold = EXCLUDED.threshold
+                    """,
+                    (chat_id, account_no, meter_no, threshold),
+                )
+            conn.commit()
 
 def remove_user(chat_id: int):
     if USE_SQLITE:
@@ -101,11 +99,10 @@ def remove_user(chat_id: int):
         cur = conn.cursor()
         cur.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
     else:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("DELETE FROM users WHERE chat_id = %s", (chat_id,))
-    conn.commit()
-    conn.close()
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM users WHERE chat_id = %s", (chat_id,))
+            conn.commit()
 
 def get_all_users():
     if USE_SQLITE:
@@ -113,9 +110,11 @@ def get_all_users():
         cur = conn.cursor()
         cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users")
     else:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users")
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users")
+            rows = cur.fetchall()
+        return rows
     rows = cur.fetchall()
     conn.close()
     return rows
@@ -126,9 +125,11 @@ def get_user(chat_id: int):
         cur = conn.cursor()
         cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users WHERE chat_id = ?", (chat_id,))
     else:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users WHERE chat_id = %s", (chat_id,))
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users WHERE chat_id = %s", (chat_id,))
+                row = cur.fetchone()
+            return row
     row = cur.fetchone()
     conn.close()
     return row
@@ -139,11 +140,10 @@ def update_last_balance(chat_id: int, balance: float):
         cur = conn.cursor()
         cur.execute("UPDATE users SET last_balance = ? WHERE chat_id = ?", (balance, chat_id))
     else:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("UPDATE users SET last_balance = %s WHERE chat_id = %s", (balance, chat_id))
-    conn.commit()
-    conn.close()
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET last_balance = %s WHERE chat_id = %s", (balance, chat_id))
+            conn.commit()
 
 def set_threshold(chat_id: int, threshold: float):
     if USE_SQLITE:
@@ -151,11 +151,10 @@ def set_threshold(chat_id: int, threshold: float):
         cur = conn.cursor()
         cur.execute("UPDATE users SET threshold = ? WHERE chat_id = ?", (threshold, chat_id))
     else:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-        cur.execute("UPDATE users SET threshold = %s WHERE chat_id = %s", (threshold, chat_id))
-    conn.commit()
-    conn.close()
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET threshold = %s WHERE chat_id = %s", (threshold, chat_id))
+            conn.commit()
 
 # ---------------- DESCO API helpers ----------------
 def fetch_balance(account_no: str, meter_no: str):
