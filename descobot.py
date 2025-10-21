@@ -1,4 +1,5 @@
 import logging
+import psycopg2
 import sqlite3
 import requests
 import urllib3
@@ -16,13 +17,14 @@ import os
 import asyncio
 
 # ---------------- Configuration ----------------
-BOT_TOKEN = os.getenv("8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0")
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN environment variable not set")
-DAILY_TIME = dt_time(hour=9, minute=0, tzinfo=ZoneInfo("Asia/Dhaka"))
+BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Replace with your new token from BotFather
+DATABASE_URL = os.getenv("postgresql://descobot_user:EzRm8aOJbwww80UvLAVF03URsgDczzTu@dpg-d3riedpr0fns73dm3c60-a/descobot")  # For PostgreSQL on Render
+USE_SQLITE = not DATABASE_URL  # Fallback to SQLite if DATABASE_URL not set
+if USE_SQLITE:
+    DB_FILE = os.path.join(os.path.expanduser("~"), "desco_bot_users.db")
+DAILY_TIME = dt_time(hour=20, minute=0, tzinfo=ZoneInfo("Asia/Dhaka"))  # Set to 8 PM for testing
 INFO_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getCustomerInfo"
 BALANCE_URL = "https://prepaid.desco.org.bd/api/tkdes/customer/getBalance"
-DB_FILE = os.path.join(os.path.expanduser("~"), "desco_bot_users.db")  # Android-friendly path
 
 # Disable insecure HTTPS warnings (not recommended for production)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -35,70 +37,123 @@ logger = logging.getLogger(__name__)
 
 # ---------------- Database helpers ----------------
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            chat_id INTEGER PRIMARY KEY,
-            account_no TEXT,
-            meter_no TEXT,
-            threshold REAL DEFAULT 100.0,
-            last_balance REAL
+    if USE_SQLITE:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                chat_id INTEGER PRIMARY KEY,
+                account_no TEXT,
+                meter_no TEXT,
+                threshold REAL DEFAULT 100.0,
+                last_balance REAL
+            )
+            """
         )
-        """
-    )
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                chat_id BIGINT PRIMARY KEY,
+                account_no TEXT,
+                meter_no TEXT,
+                threshold FLOAT DEFAULT 100.0,
+                last_balance FLOAT
+            )
+            """
+        )
     conn.commit()
     conn.close()
 
 def add_or_update_user(chat_id: int, account_no: str, meter_no: str, threshold: float = 100.0):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO users (chat_id, account_no, meter_no, threshold)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(chat_id) DO UPDATE SET account_no=excluded.account_no, meter_no=excluded.meter_no, threshold=excluded.threshold
-        """,
-        (chat_id, account_no, meter_no, threshold),
-    )
+    if USE_SQLITE:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO users (chat_id, account_no, meter_no, threshold)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET account_no=excluded.account_no, meter_no=excluded.meter_no, threshold=excluded.threshold
+            """,
+            (chat_id, account_no, meter_no, threshold),
+        )
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO users (chat_id, account_no, meter_no, threshold)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (chat_id) DO UPDATE
+            SET account_no = EXCLUDED.account_no, meter_no = EXCLUDED.meter_no, threshold = EXCLUDED.threshold
+            """,
+            (chat_id, account_no, meter_no, threshold),
+        )
     conn.commit()
     conn.close()
 
 def remove_user(chat_id: int):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
+    if USE_SQLITE:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE chat_id = %s", (chat_id,))
     conn.commit()
     conn.close()
 
 def get_all_users():
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users")
+    if USE_SQLITE:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users")
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users")
     rows = cur.fetchall()
     conn.close()
     return rows
 
 def get_user(chat_id: int):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users WHERE chat_id = ?", (chat_id,))
+    if USE_SQLITE:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users WHERE chat_id = ?", (chat_id,))
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT chat_id, account_no, meter_no, threshold, last_balance FROM users WHERE chat_id = %s", (chat_id,))
     row = cur.fetchone()
     conn.close()
     return row
 
 def update_last_balance(chat_id: int, balance: float):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET last_balance = ? WHERE chat_id = ?", (balance, chat_id))
+    if USE_SQLITE:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET last_balance = ? WHERE chat_id = ?", (balance, chat_id))
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET last_balance = %s WHERE chat_id = %s", (balance, chat_id))
     conn.commit()
     conn.close()
 
 def set_threshold(chat_id: int, threshold: float):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET threshold = ? WHERE chat_id = ?", (threshold, chat_id))
+    if USE_SQLITE:
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET threshold = ? WHERE chat_id = ?", (threshold, chat_id))
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET threshold = %s WHERE chat_id = %s", (threshold, chat_id))
     conn.commit()
     conn.close()
 
@@ -226,7 +281,7 @@ async def cmd_setthreshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         val = float(args[0])
         set_threshold(chat_id, val)
         await update.message.reply_text(f"✅ থ্রেশহোল্ড সেট করা হয়েছে: ৳{val}")
-    except Exception:
+    except ValueError:
         await update.message.reply_text("ভুল পরিমাপ। অনুগ্রহ করে একটি সংখ্যা লিখুন।")
 
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
