@@ -343,31 +343,7 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.job_queue.run_daily(daily_job, time=DAILY_TIME)
     logger.info("Bot started. Polling...")
-    try:
-        await app.run_polling(allowed_updates=Update.ALL_TYPES)
-    except Exception as e:
-        logger.error("Error running application: %s", e)
-        raise
-    finally:
-        try:
-            await app.stop()
-            await app.shutdown()
-        except Exception as e:
-            logger.error("Error during shutdown: %s", e)
+    await app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            logger.warning("Event loop is already running. Scheduling main task.")
-            loop.create_task(main())
-        else:
-            try:
-                loop.run_until_complete(main())
-            finally:
-                loop.run_until_complete(loop.shutdown_asyncgens())
-                if not loop.is_closed():
-                    loop.close()
-    except Exception as e:
-        logger.error("Unexpected error: %s", e)
-        raise
+    asyncio.run(main())
