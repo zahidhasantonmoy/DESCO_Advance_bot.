@@ -12,6 +12,7 @@ from telegram.ext import (
     JobQueue,
 )
 import requests
+import urllib3  # Added import for urllib3
 import sqlite3  # or psycopg2 for PostgreSQL
 # ... (other imports as in your original code)
 
@@ -21,6 +22,9 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+# Suppress SSL warnings for DESCO API
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ---------------- Configuration ----------------
 BOT_TOKEN = "8258968161:AAHFL2uEIjJJ3I5xNSn66248UaQHRr-Prl0"  # Replace with your new token from BotFather
@@ -355,9 +359,7 @@ async def main():
     app.job_queue.run_daily(daily_job, time=DAILY_TIME)
 
     logger.info("Bot started. Polling...")
-    # Run polling without manual loop management
     await app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    # Use asyncio.run to manage the event loop
     asyncio.run(main())
